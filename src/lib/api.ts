@@ -75,10 +75,12 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
     }
   }
   if (!res.ok) {
-    const msg =
-      (data && typeof data === "object" && "message" in data && String((data as { message: unknown }).message)) ||
-      (typeof data === "string" && data) ||
-      `Request failed (${res.status})`;
+    let msg = `Request failed (${res.status})`;
+    if (data && typeof data === "object" && "message" in data) {
+      msg = String((data as { message: unknown }).message);
+    } else if (typeof data === "string" && data) {
+      msg = data;
+    }
     throw new ApiError(msg, res.status, data);
   }
   return data as T;

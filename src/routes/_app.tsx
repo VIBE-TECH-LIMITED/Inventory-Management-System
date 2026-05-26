@@ -1,10 +1,15 @@
-import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopbar } from "@/components/app-topbar";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 
 export const Route = createFileRoute("/_app")({
+  beforeLoad: () => {
+    if (typeof window !== "undefined" && !window.localStorage.getItem("qs_token")) {
+      throw redirect({ to: "/login" });
+    }
+  },
   component: AppLayout,
 });
 

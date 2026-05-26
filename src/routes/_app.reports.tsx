@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileDown, FileSpreadsheet } from "lucide-react";
+import { FileDown, FileSpreadsheet, Loader2 } from "lucide-react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -11,28 +12,49 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  LineChart,
-  Line,
-  Legend,
 } from "recharts";
-import { salesByDay, topProducts } from "@/lib/mock-data";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
+import { ReportsAPI } from "@/lib/api";
 
 export const Route = createFileRoute("/_app/reports")({
   head: () => ({ meta: [{ title: "Reports — Quick Save" }] }),
   component: Reports,
 });
 
-const monthly = [
-  { m: "Jan", revenue: 1.42, profit: 0.32 },
-  { m: "Feb", revenue: 1.61, profit: 0.38 },
-  { m: "Mar", revenue: 1.82, profit: 0.44 },
-  { m: "Apr", revenue: 2.05, profit: 0.51 },
-  { m: "May", revenue: 2.31, profit: 0.59 },
-];
-
 function Reports() {
+  const dailyQ = useQuery({ queryKey: ["reports", "today"], queryFn: () => ReportsAPI.today() });
+  const monthlyQ = useQuery({ queryKey: ["reports", "month"], queryFn: () => ReportsAPI.thisMonth() });
+
+  const daily = dailyQ.data;
+  const monthly = monthlyQ.data;
+
+  const kpis = [
+    {
+      l: "Revenue (today)",
+      v: daily ? `KSh ${Number(daily.totalSales).toLocaleString()}` : "—",
+      s: daily ? `${daily.numberOfTransactions} transactions` : "",
+    },
+    {
+      l: `Revenue (${monthly?.month ?? "month"})`,
+      v: monthly ? `KSh ${Number(monthly.totalSales).toLocaleString()}` : "—",
+      s: monthly ? `${monthly.numberOfTransactions} orders` : "",
+    },
+    {
+      l: "Profit (month)",
+      v: monthly ? `KSh ${Number(monthly.profit).toLocaleString()}` : "—",
+      s: monthly ? `Loss: KSh ${Number(monthly.loss).toLocaleString()}` : "",
+    },
+    {
+      l: "Items sold today",
+      v: daily ? String(daily.itemsSoldList.reduce((s, i) => s + i.quantitySold, 0)) : "—",
+      s: daily ? `${daily.itemsSoldList.length} distinct SKUs` : "",
+    },
+  ];
+
+  const topToday = daily?.itemsSoldList ?? [];
+  const topMonth = monthly?.mostSoldItem ?? [];
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -51,12 +73,7 @@ function Reports() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        {[
-          { l: "Revenue (May)", v: "KSh 2.31M", s: "+12.6% vs Apr" },
-          { l: "Profit estimate", v: "KSh 590K", s: "Margin 25.5%" },
-          { l: "Avg. order", v: "KSh 318", s: "+4.1%" },
-          { l: "Orders served", v: "7,261", s: "+9.2%" },
-        ].map((k) => (
+        {kpis.map((k) => (
           <Card key={k.l}>
             <CardContent className="p-5">
               <div className="text-xs text-muted-foreground">{k.l}</div>
@@ -69,29 +86,36 @@ function Reports() {
 
       <Tabs defaultValue="daily">
         <TabsList>
-          <TabsTrigger value="daily">Daily sales</TabsTrigger>
-          <TabsTrigger value="monthly">Monthly report</TabsTrigger>
-          <TabsTrigger value="top">Top products</TabsTrigger>
+          <TabsTrigger value="daily">Today's items</TabsTrigger>
+          <TabsTrigger value="monthly">Monthly top</TabsTrigger>
         </TabsList>
 
         <TabsContent value="daily">
           <Card>
             <CardHeader>
-              <CardTitle>Daily sales (last 7 days)</CardTitle>
-              <CardDescription>Revenue per day in KSh</CardDescription>
+              <CardTitle>Items sold today</CardTitle>
+              <CardDescription>{daily?.date ?? ""}</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer>
-                  <BarChart data={salesByDay} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                    <XAxis dataKey="day" stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
-                    <YAxis stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }} />
-                    <Bar dataKey="sales" fill="var(--color-primary)" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              {dailyQ.isLoading ? (
+                <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading…
+                </div>
+              ) : topToday.length === 0 ? (
+                <div className="py-10 text-center text-sm text-muted-foreground">No sales today yet.</div>
+              ) : (
+                <div className="h-80">
+                  <ResponsiveContainer>
+                    <BarChart data={topToday} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                      <XAxis dataKey="productName" stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
+                      <YAxis stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
+                      <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }} />
+                      <Bar dataKey="quantitySold" fill="var(--color-primary)" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -99,54 +123,41 @@ function Reports() {
         <TabsContent value="monthly">
           <Card>
             <CardHeader>
-              <CardTitle>Revenue & profit (KSh Millions)</CardTitle>
-              <CardDescription>Trailing 5 months</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer>
-                  <LineChart data={monthly} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                    <XAxis dataKey="m" stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
-                    <YAxis stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }} />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Line type="monotone" dataKey="revenue" stroke="var(--color-primary)" strokeWidth={2.5} dot={{ r: 4 }} />
-                    <Line type="monotone" dataKey="profit" stroke="var(--color-chart-3)" strokeWidth={2.5} dot={{ r: 4 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="top">
-          <Card>
-            <CardHeader>
-              <CardTitle>Top-selling products</CardTitle>
+              <CardTitle>Top selling — {monthly?.month ?? ""}</CardTitle>
               <CardDescription>Ranked by units sold this month</CardDescription>
             </CardHeader>
             <CardContent className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>#</TableHead>
-                    <TableHead>Product</TableHead>
-                    <TableHead className="text-right">Units sold</TableHead>
-                    <TableHead className="text-right">Revenue (KSh)</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {topProducts.map((p, i) => (
-                    <TableRow key={p.name}>
-                      <TableCell className="font-semibold text-muted-foreground">{i + 1}</TableCell>
-                      <TableCell className="font-medium">{p.name}</TableCell>
-                      <TableCell className="text-right">{p.sold.toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-semibold">{p.revenue.toLocaleString()}</TableCell>
+              {monthlyQ.isLoading ? (
+                <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading…
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>#</TableHead>
+                      <TableHead>Product</TableHead>
+                      <TableHead className="text-right">Units sold</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {topMonth.map((p, i) => (
+                      <TableRow key={p.productName}>
+                        <TableCell className="font-semibold text-muted-foreground">{i + 1}</TableCell>
+                        <TableCell className="font-medium">{p.productName}</TableCell>
+                        <TableCell className="text-right">{p.quantitySold.toLocaleString()}</TableCell>
+                      </TableRow>
+                    ))}
+                    {topMonth.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={3} className="py-10 text-center text-sm text-muted-foreground">
+                          No data for this month yet.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

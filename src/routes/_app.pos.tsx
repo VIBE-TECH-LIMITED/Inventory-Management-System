@@ -1,57 +1,79 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Search, Plus, Minus, Trash2, Banknote, Smartphone, Printer, Package } from "lucide-react";
+import { Search, Plus, Minus, Trash2, Banknote, Smartphone, Printer, Package, Loader2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
-import { products } from "@/lib/mock-data";
+import { ProductsAPI, TransactionsAPI, ApiError, type ProductResponseDto, type PaymentMethod } from "@/lib/api";
 
 export const Route = createFileRoute("/_app/pos")({
   head: () => ({ meta: [{ title: "POS — Quick Save" }] }),
   component: POS,
 });
 
-type CartLine = { id: string; name: string; price: number; qty: number };
+type CartLine = { id: number; name: string; price: number; qty: number };
 
 function POS() {
+  const qc = useQueryClient();
+  const productsQ = useQuery({
+    queryKey: ["products", "active"],
+    queryFn: () => ProductsAPI.active(),
+  });
   const [q, setQ] = useState("");
-  const [cart, setCart] = useState<CartLine[]>([
-    { id: "P001", name: "Coca-Cola 500ml", price: 80, qty: 2 },
-    { id: "P003", name: "Supa Loaf 400g", price: 65, qty: 1 },
-  ]);
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [phone, setPhone] = useState("");
 
-  const list = useMemo(
-    () =>
-      products
-        .filter((p) => p.stock > 0)
-        .filter((p) => p.name.toLowerCase().includes(q.toLowerCase()) || p.sku.toLowerCase().includes(q.toLowerCase()))
-        .slice(0, 12),
-    [q],
-  );
+  const list = useMemo(() => {
+    const items = productsQ.data ?? [];
+    return items
+      .filter((p) => p.productName.toLowerCase().includes(q.toLowerCase()))
+      .slice(0, 12);
+  }, [productsQ.data, q]);
 
-  const add = (p: (typeof products)[number]) => {
+  const add = (p: ProductResponseDto) => {
     setCart((c) => {
-      const ex = c.find((x) => x.id === p.id);
-      if (ex) return c.map((x) => (x.id === p.id ? { ...x, qty: x.qty + 1 } : x));
-      return [...c, { id: p.id, name: p.name, price: p.price, qty: 1 }];
+      const ex = c.find((x) => x.id === p.Id);
+      if (ex) return c.map((x) => (x.id === p.Id ? { ...x, qty: x.qty + 1 } : x));
+      return [...c, { id: p.Id, name: p.productName, price: Number(p.sellingPrice), qty: 1 }];
     });
   };
-  const dec = (id: string) =>
+  const dec = (id: number) =>
     setCart((c) => c.flatMap((x) => (x.id === id ? (x.qty > 1 ? [{ ...x, qty: x.qty - 1 }] : []) : [x])));
-  const inc = (id: string) => setCart((c) => c.map((x) => (x.id === id ? { ...x, qty: x.qty + 1 } : x)));
-  const remove = (id: string) => setCart((c) => c.filter((x) => x.id !== id));
+  const inc = (id: number) => setCart((c) => c.map((x) => (x.id === id ? { ...x, qty: x.qty + 1 } : x)));
+  const remove = (id: number) => setCart((c) => c.filter((x) => x.id !== id));
 
   const subtotal = cart.reduce((s, x) => s + x.price * x.qty, 0);
   const tax = Math.round(subtotal * 0.16);
   const total = subtotal + tax;
 
-  const checkout = (method: "Cash" | "M-Pesa") => {
+  const checkoutMut = useMutation({
+    mutationFn: (method: PaymentMethod) =>
+      TransactionsAPI.create({
+        items: cart.map((l) => ({ productId: l.id, quantity: l.qty })),
+        paymentMethod: method,
+        phoneNumber: method === "MPESA" ? phone : undefined,
+      }),
+    onSuccess: (res, method) => {
+      toast.success(`Payment received via ${method} — KSh ${Number(res.totalAmount).toLocaleString()}`);
+      setCart([]);
+      setPhone("");
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
+    },
+    onError: (e: unknown) =>
+      toast.error(e instanceof ApiError ? e.message : "Checkout failed"),
+  });
+
+  const checkout = (method: PaymentMethod) => {
     if (cart.length === 0) return toast.error("Cart is empty");
-    toast.success(`Payment received via ${method} — KSh ${total.toLocaleString()}`);
-    setCart([]);
+    if (method === "MPESA" && !/^(07|01)\d{8}$/.test(phone)) {
+      return toast.error("Enter a valid M-Pesa phone number");
+    }
+    checkoutMut.mutate(method);
   };
 
   return (
@@ -76,31 +98,42 @@ function POS() {
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-          {list.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => add(p)}
-              className="group rounded-xl border bg-card p-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
-            >
-              <div className="flex h-20 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <Package className="h-7 w-7" />
+        {productsQ.isLoading ? (
+          <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading products…
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+            {list.map((p) => (
+              <button
+                key={p.Id}
+                onClick={() => add(p)}
+                className="group rounded-xl border bg-card p-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+              >
+                <div className="flex h-20 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  <Package className="h-7 w-7" />
+                </div>
+                <div className="mt-2 text-sm font-medium leading-tight line-clamp-2">{p.productName}</div>
+                <div className="mt-1 flex items-center justify-between">
+                  <span className="text-sm font-bold text-primary">KSh {Number(p.sellingPrice).toLocaleString()}</span>
+                  <Badge variant="outline" className="text-[10px]">#{p.Id}</Badge>
+                </div>
+              </button>
+            ))}
+            {list.length === 0 && (
+              <div className="col-span-full py-10 text-center text-sm text-muted-foreground">
+                No products available.
               </div>
-              <div className="mt-2 text-sm font-medium leading-tight line-clamp-2">{p.name}</div>
-              <div className="mt-1 flex items-center justify-between">
-                <span className="text-sm font-bold text-primary">KSh {p.price}</span>
-                <Badge variant="outline" className="text-[10px]">{p.stock}</Badge>
-              </div>
-            </button>
-          ))}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Cart */}
       <Card className="lg:sticky lg:top-20 lg:h-fit">
         <CardHeader>
           <CardTitle>Current sale</CardTitle>
-          <CardDescription>Receipt #TX-{10232 + cart.length}</CardDescription>
+          <CardDescription>{cart.length} item{cart.length !== 1 && "s"} in cart</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <ScrollArea className="h-72 rounded-lg border">
@@ -150,12 +183,19 @@ function POS() {
             </div>
           </div>
 
+          <Input
+            placeholder="M-Pesa phone (07… or 01…)"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
+
           <div className="grid grid-cols-2 gap-2">
-            <Button onClick={() => checkout("Cash")} variant="outline" size="lg">
+            <Button onClick={() => checkout("CASH")} variant="outline" size="lg" disabled={checkoutMut.isPending}>
               <Banknote className="h-4 w-4" /> Cash
             </Button>
-            <Button onClick={() => checkout("M-Pesa")} size="lg">
-              <Smartphone className="h-4 w-4" /> M-Pesa
+            <Button onClick={() => checkout("MPESA")} size="lg" disabled={checkoutMut.isPending}>
+              {checkoutMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Smartphone className="h-4 w-4" />}
+              M-Pesa
             </Button>
           </div>
           <Button variant="ghost" className="w-full" onClick={() => toast.info("Receipt sent to printer")}>

@@ -12,8 +12,15 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { notifications } from "@/lib/mock-data";
+import { setToken } from "@/lib/api";
+import { useNavigate } from "@tanstack/react-router";
 
 export function AppTopbar({ onMenuClick }: { onMenuClick: () => void }) {
+  const nav = useNavigate();
+  const signOut = () => {
+    setToken(null);
+    nav({ to: "/login" });
+  };
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-card/80 px-4 backdrop-blur md:px-6">
       <Button variant="ghost" size="icon" className="md:hidden" onClick={onMenuClick}>
@@ -65,7 +72,7 @@ export function AppTopbar({ onMenuClick }: { onMenuClick: () => void }) {
             <DropdownMenuItem>Profile</DropdownMenuItem>
             <DropdownMenuItem>Settings</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive">Sign out</DropdownMenuItem>
+            <DropdownMenuItem className="text-destructive" onClick={signOut}>Sign out</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

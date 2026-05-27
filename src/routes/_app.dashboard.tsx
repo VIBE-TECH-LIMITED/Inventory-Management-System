@@ -1,5 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +12,6 @@ import {
   Plus,
   ScanBarcode,
   FileBarChart,
-  Loader2,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -28,21 +26,8 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Link } from "@tanstack/react-router";
-import {
-  ProductsAPI,
-  ReportsAPI,
-  StocksAPI,
-  TransactionsAPI,
-} from "@/lib/api";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { products, transactions, salesByDay, categoryShare, stockRequests } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Quick Save" }] }),
@@ -59,60 +44,19 @@ const pieColors = [
 ];
 
 function Dashboard() {
-  const productsQ = useQuery({ queryKey: ["products", "active"], queryFn: () => ProductsAPI.active() });
-  const dailyQ = useQuery({ queryKey: ["reports", "today"], queryFn: () => ReportsAPI.today() });
-  const monthlyQ = useQuery({ queryKey: ["reports", "month"], queryFn: () => ReportsAPI.thisMonth() });
-  const stocksQ = useQuery({ queryKey: ["stocks"], queryFn: () => StocksAPI.list() });
-  const txQ = useQuery({ queryKey: ["transactions", "today"], queryFn: () => TransactionsAPI.today() });
-
-  const lowStock = (productsQ.data ?? []).filter(
-    (p) => Number(p.minimumQuantity) > 0,
-  ).length;
-  const pendingStock = (stocksQ.data ?? []).filter((s) => s.status === "PENDING").length;
+  const lowStock = products.filter((p) => p.stock > 0 && p.stock <= p.reorderLevel).length;
+  const outOfStock = products.filter((p) => p.stock === 0).length;
+  const pending = stockRequests.filter((r) => r.status === "pending").length;
+  const revenueToday = salesByDay[salesByDay.length - 1].sales;
+  const ordersToday = salesByDay[salesByDay.length - 1].orders;
 
   const stats = [
-    {
-      label: "Total Products",
-      value: productsQ.data ? String(productsQ.data.length) : "—",
-      icon: Package,
-      tint: "bg-primary/10 text-primary",
-    },
-    {
-      label: "Sales Today",
-      value: dailyQ.data ? String(dailyQ.data.numberOfTransactions) : "—",
-      icon: ShoppingCart,
-      tint: "bg-info/10 text-info",
-    },
-    {
-      label: "Revenue Today (KSh)",
-      value: dailyQ.data ? Number(dailyQ.data.totalSales).toLocaleString() : "—",
-      icon: DollarSign,
-      tint: "bg-success/10 text-success",
-    },
-    {
-      label: "Low Stock Items",
-      value: String(lowStock),
-      icon: AlertTriangle,
-      tint: "bg-warning/10 text-warning",
-    },
-    {
-      label: "Pending Requests",
-      value: String(pendingStock),
-      icon: ClipboardList,
-      tint: "bg-accent text-accent-foreground",
-    },
+    { label: "Total Products", value: String(products.length), icon: Package, tint: "bg-primary/10 text-primary" },
+    { label: "Sales Today", value: String(ordersToday), icon: ShoppingCart, tint: "bg-info/10 text-info" },
+    { label: "Revenue Today (KSh)", value: revenueToday.toLocaleString(), icon: DollarSign, tint: "bg-success/10 text-success" },
+    { label: "Low Stock Items", value: String(lowStock + outOfStock), icon: AlertTriangle, tint: "bg-warning/10 text-warning" },
+    { label: "Pending Requests", value: String(pending), icon: ClipboardList, tint: "bg-accent text-accent-foreground" },
   ];
-
-  // Build a simple "items sold" chart from today's report
-  const todaySeries = (dailyQ.data?.itemsSoldList ?? []).map((i) => ({
-    name: i.productName,
-    qty: i.quantitySold,
-  }));
-
-  const monthShare = (monthlyQ.data?.mostSoldItem ?? []).slice(0, 6).map((i) => ({
-    name: i.productName,
-    value: i.quantitySold,
-  }));
 
   return (
     <div className="space-y-6">
@@ -137,8 +81,7 @@ function Dashboard() {
                   <s.icon className="h-5 w-5" />
                 </div>
                 <span className="inline-flex items-center gap-0.5 text-xs font-medium text-success">
-                  <ArrowUpRight className="h-3 w-3" />
-                  live
+                  <ArrowUpRight className="h-3 w-3" /> 12%
                 </span>
               </div>
               <div className="mt-4 text-2xl font-bold tracking-tight">{s.value}</div>
@@ -152,62 +95,50 @@ function Dashboard() {
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-start justify-between space-y-0">
             <div>
-              <CardTitle>Items sold today</CardTitle>
-              <CardDescription>{dailyQ.data?.date ?? "Loading…"}</CardDescription>
+              <CardTitle>Weekly sales</CardTitle>
+              <CardDescription>Revenue (KSh) across the past 7 days</CardDescription>
             </div>
-            <Badge variant="secondary">Today</Badge>
+            <Badge variant="secondary">This week</Badge>
           </CardHeader>
           <CardContent>
             <div className="h-72 w-full">
-              {dailyQ.isLoading ? (
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading…
-                </div>
-              ) : todaySeries.length === 0 ? (
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No sales today yet.</div>
-              ) : (
-                <ResponsiveContainer>
-                  <AreaChart data={todaySeries} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gSales" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={0.4} />
-                        <stop offset="100%" stopColor="var(--color-primary)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                    <XAxis dataKey="name" stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
-                    <YAxis stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }} />
-                    <Area type="monotone" dataKey="qty" stroke="var(--color-primary)" strokeWidth={2.5} fill="url(#gSales)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              )}
+              <ResponsiveContainer>
+                <AreaChart data={salesByDay} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="gSales" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={0.4} />
+                      <stop offset="100%" stopColor="var(--color-primary)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                  <XAxis dataKey="day" stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }} />
+                  <Area type="monotone" dataKey="sales" stroke="var(--color-primary)" strokeWidth={2.5} fill="url(#gSales)" />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Top products this month</CardTitle>
-            <CardDescription>Units sold share</CardDescription>
+            <CardTitle>Category share</CardTitle>
+            <CardDescription>Revenue split by category</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-72">
-              {monthShare.length === 0 ? (
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No data yet.</div>
-              ) : (
-                <ResponsiveContainer>
-                  <PieChart>
-                    <Pie data={monthShare} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={2}>
-                      {monthShare.map((_, i) => (
-                        <Cell key={i} fill={pieColors[i % pieColors.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }} />
-                    <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              )}
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie data={categoryShare} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={2}>
+                    {categoryShare.map((_, i) => (
+                      <Cell key={i} fill={pieColors[i % pieColors.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
@@ -226,6 +157,7 @@ function Dashboard() {
             <TableHeader>
               <TableRow>
                 <TableHead>Receipt</TableHead>
+                <TableHead>Time</TableHead>
                 <TableHead>Cashier</TableHead>
                 <TableHead className="text-right">Items</TableHead>
                 <TableHead className="text-right">Total (KSh)</TableHead>
@@ -233,24 +165,18 @@ function Dashboard() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(txQ.data ?? []).slice(0, 8).map((t) => (
-                <TableRow key={t.Id}>
-                  <TableCell className="font-medium">#{t.transactionId}</TableCell>
-                  <TableCell>{t.cashierName}</TableCell>
-                  <TableCell className="text-right">{t.items.length}</TableCell>
-                  <TableCell className="text-right font-semibold">{Number(t.totalAmount).toLocaleString()}</TableCell>
+              {transactions.map((t) => (
+                <TableRow key={t.id}>
+                  <TableCell className="font-medium">{t.id}</TableCell>
+                  <TableCell>{t.time}</TableCell>
+                  <TableCell>{t.cashier}</TableCell>
+                  <TableCell className="text-right">{t.items}</TableCell>
+                  <TableCell className="text-right font-semibold">{t.total.toLocaleString()}</TableCell>
                   <TableCell>
-                    <Badge variant={t.paymentMethod === "MPESA" ? "default" : "secondary"}>{t.paymentMethod}</Badge>
+                    <Badge variant={t.method === "M-Pesa" ? "default" : "secondary"}>{t.method}</Badge>
                   </TableCell>
                 </TableRow>
               ))}
-              {(txQ.data ?? []).length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
-                    {txQ.isLoading ? "Loading transactions…" : "No transactions yet today."}
-                  </TableCell>
-                </TableRow>
-              )}
             </TableBody>
           </Table>
         </CardContent>

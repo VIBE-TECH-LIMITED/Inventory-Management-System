@@ -1,9 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileDown, FileSpreadsheet, Loader2 } from "lucide-react";
+import { FileDown, FileSpreadsheet } from "lucide-react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -12,48 +11,35 @@ import {
   XAxis,
   YAxis,
   Tooltip,
+  LineChart,
+  Line,
 } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { ReportsAPI } from "@/lib/api";
+import { salesByDay, topProducts } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/_app/reports")({
   head: () => ({ meta: [{ title: "Reports — Quick Save" }] }),
   component: Reports,
 });
 
-function Reports() {
-  const dailyQ = useQuery({ queryKey: ["reports", "today"], queryFn: () => ReportsAPI.today() });
-  const monthlyQ = useQuery({ queryKey: ["reports", "month"], queryFn: () => ReportsAPI.thisMonth() });
+const monthly = [
+  { m: "Jan", sales: 1240000 }, { m: "Feb", sales: 1380000 }, { m: "Mar", sales: 1510000 },
+  { m: "Apr", sales: 1420000 }, { m: "May", sales: 1670000 }, { m: "Jun", sales: 1820000 },
+  { m: "Jul", sales: 1755000 }, { m: "Aug", sales: 1910000 }, { m: "Sep", sales: 2050000 },
+  { m: "Oct", sales: 2180000 }, { m: "Nov", sales: 2360000 }, { m: "Dec", sales: 2580000 },
+];
 
-  const daily = dailyQ.data;
-  const monthly = monthlyQ.data;
+function Reports() {
+  const totalWeek = salesByDay.reduce((s, d) => s + d.sales, 0);
+  const totalOrders = salesByDay.reduce((s, d) => s + d.orders, 0);
 
   const kpis = [
-    {
-      l: "Revenue (today)",
-      v: daily ? `KSh ${Number(daily.totalSales).toLocaleString()}` : "—",
-      s: daily ? `${daily.numberOfTransactions} transactions` : "",
-    },
-    {
-      l: `Revenue (${monthly?.month ?? "month"})`,
-      v: monthly ? `KSh ${Number(monthly.totalSales).toLocaleString()}` : "—",
-      s: monthly ? `${monthly.numberOfTransactions} orders` : "",
-    },
-    {
-      l: "Profit (month)",
-      v: monthly ? `KSh ${Number(monthly.profit).toLocaleString()}` : "—",
-      s: monthly ? `Loss: KSh ${Number(monthly.loss).toLocaleString()}` : "",
-    },
-    {
-      l: "Items sold today",
-      v: daily ? String(daily.itemsSoldList.reduce((s, i) => s + i.quantitySold, 0)) : "—",
-      s: daily ? `${daily.itemsSoldList.length} distinct SKUs` : "",
-    },
+    { l: "Revenue (week)", v: `KSh ${totalWeek.toLocaleString()}`, s: "+12.4% vs last week" },
+    { l: "Orders", v: totalOrders.toLocaleString(), s: "+8.1% vs last week" },
+    { l: "Avg basket", v: `KSh ${Math.round(totalWeek / totalOrders).toLocaleString()}`, s: "+3.2%" },
+    { l: "Best day", v: "Saturday", s: "KSh 91,500" },
   ];
-
-  const topToday = daily?.itemsSoldList ?? [];
-  const topMonth = monthly?.mostSoldItem ?? [];
 
   return (
     <div className="space-y-6">
@@ -86,36 +72,29 @@ function Reports() {
 
       <Tabs defaultValue="daily">
         <TabsList>
-          <TabsTrigger value="daily">Today's items</TabsTrigger>
-          <TabsTrigger value="monthly">Monthly top</TabsTrigger>
+          <TabsTrigger value="daily">Daily</TabsTrigger>
+          <TabsTrigger value="monthly">Monthly</TabsTrigger>
+          <TabsTrigger value="top">Top products</TabsTrigger>
         </TabsList>
 
         <TabsContent value="daily">
           <Card>
             <CardHeader>
-              <CardTitle>Items sold today</CardTitle>
-              <CardDescription>{daily?.date ?? ""}</CardDescription>
+              <CardTitle>Sales this week</CardTitle>
+              <CardDescription>Revenue (KSh) per day</CardDescription>
             </CardHeader>
             <CardContent>
-              {dailyQ.isLoading ? (
-                <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading…
-                </div>
-              ) : topToday.length === 0 ? (
-                <div className="py-10 text-center text-sm text-muted-foreground">No sales today yet.</div>
-              ) : (
-                <div className="h-80">
-                  <ResponsiveContainer>
-                    <BarChart data={topToday} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                      <XAxis dataKey="productName" stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
-                      <YAxis stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
-                      <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }} />
-                      <Bar dataKey="quantitySold" fill="var(--color-primary)" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
+              <div className="h-80">
+                <ResponsiveContainer>
+                  <BarChart data={salesByDay} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                    <XAxis dataKey="day" stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
+                    <YAxis stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
+                    <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }} />
+                    <Bar dataKey="sales" fill="var(--color-primary)" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -123,41 +102,52 @@ function Reports() {
         <TabsContent value="monthly">
           <Card>
             <CardHeader>
-              <CardTitle>Top selling — {monthly?.month ?? ""}</CardTitle>
+              <CardTitle>Monthly trend</CardTitle>
+              <CardDescription>Revenue over the past 12 months</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-80">
+                <ResponsiveContainer>
+                  <LineChart data={monthly} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                    <XAxis dataKey="m" stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
+                    <YAxis stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
+                    <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }} />
+                    <Line type="monotone" dataKey="sales" stroke="var(--color-primary)" strokeWidth={2.5} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="top">
+          <Card>
+            <CardHeader>
+              <CardTitle>Top selling products</CardTitle>
               <CardDescription>Ranked by units sold this month</CardDescription>
             </CardHeader>
             <CardContent className="overflow-x-auto">
-              {monthlyQ.isLoading ? (
-                <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading…
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>#</TableHead>
-                      <TableHead>Product</TableHead>
-                      <TableHead className="text-right">Units sold</TableHead>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>#</TableHead>
+                    <TableHead>Product</TableHead>
+                    <TableHead className="text-right">Units sold</TableHead>
+                    <TableHead className="text-right">Revenue (KSh)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {topProducts.map((p, i) => (
+                    <TableRow key={p.name}>
+                      <TableCell className="font-semibold text-muted-foreground">{i + 1}</TableCell>
+                      <TableCell className="font-medium">{p.name}</TableCell>
+                      <TableCell className="text-right">{p.sold.toLocaleString()}</TableCell>
+                      <TableCell className="text-right font-semibold">{p.revenue.toLocaleString()}</TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {topMonth.map((p, i) => (
-                      <TableRow key={p.productName}>
-                        <TableCell className="font-semibold text-muted-foreground">{i + 1}</TableCell>
-                        <TableCell className="font-medium">{p.productName}</TableCell>
-                        <TableCell className="text-right">{p.quantitySold.toLocaleString()}</TableCell>
-                      </TableRow>
-                    ))}
-                    {topMonth.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={3} className="py-10 text-center text-sm text-muted-foreground">
-                          No data for this month yet.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              )}
+                  ))}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </TabsContent>

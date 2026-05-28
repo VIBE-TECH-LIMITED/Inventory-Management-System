@@ -139,7 +139,7 @@ function LoginPage() {
             </Button>
 
             <p className="text-center text-xs text-muted-foreground">
-              Demo credentials are prefilled. Click sign in to continue.
+              Don't have an account? Contact your administrator.
             </p>
           </form>
         </div>

@@ -20,8 +20,9 @@ export const Route = createFileRoute("/login")({
 function LoginPage() {
   const nav = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [email, setEmail] = useState("admin@quicksave.co.ke");
-  const [password, setPassword] = useState("Demo@1234");
+  const [loading, setLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,9 +35,8 @@ function LoginPage() {
       setLoading(false);
       toast.success("Welcome back to Quick Save");
       nav({ to: "/dashboard" });
-    }, 500);
+    }, 400);
   };
-
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="relative hidden flex-col justify-between overflow-hidden bg-primary p-12 text-primary-foreground lg:flex">
